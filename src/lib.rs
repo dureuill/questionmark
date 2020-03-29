@@ -1,8 +1,8 @@
 //! Defines an alternative trait to `std::ops::Try`, `Question` that  is not as oriented towards tries and failures.
-//! 
+//!
 //! The trait uses a more neutral `ExtractOrReturn` enum to express whether a certain expression `e` should result in some
 //! value being returned early, or in some other value being extracted from `e`.
-//! 
+//!
 //! Types that implement the `Question` trait can be used with the `q` macro, that is similar to the `std::try` macro.
 //! The semantics of `?` could be adapted to use the `Question` trait instead of the `std::ops::Try` trait.
 
@@ -16,7 +16,7 @@ pub enum ExtractOrReturn<Early, Extract> {
 }
 
 /// Trait to implement to be able to use the `q!` macro on an instance of the type
-/// 
+///
 /// A type implementing this trait defines how an instance of this type
 /// can be either extracted to the Extract type, or returned early as an instance
 /// of the Early type.
@@ -40,7 +40,7 @@ pub trait Question<Early> {
 /// ```
 /// #[macro_use]
 /// extern crate questionmark;
-/// # fn main() { 
+/// # fn main() {
 /// fn maybe_option() -> Option<()> {
 ///     let _x = q!(Some(42));
 ///     let _y = q!(None);
