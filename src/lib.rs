@@ -151,6 +151,26 @@ impl<T, F: FromError<NoneError>> Question<F> for Option<T> {
     }
 }
 
+use core::task::Poll;
+
+// Extract Poll::Pending if the future isn't ready, or Poll::Ready(T::Extract)
+// if the underlying future is ready and was extracted, or return early if the
+// polled type wants to return early.
+impl<T, F> Question<F> for Poll<T>
+where
+    T: Question<F>,
+{
+    type Extract = Poll<T::Extract>;
+    fn extract_or_return(self) -> ExtractOrReturn<F, Self::Extract> {
+        match self {
+            Poll::Pending => ExtractOrReturn::Extract(Poll::Pending),
+            Poll::Ready(t) => t
+                .extract_or_return()
+                .map_extract(|extract| Poll::Ready(extract)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
