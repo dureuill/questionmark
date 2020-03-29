@@ -15,6 +15,28 @@ pub enum ExtractOrReturn<Early, Extract> {
     Extract(Extract),
 }
 
+impl<Early, Extract> ExtractOrReturn<Early, Extract> {
+    pub fn map_early<U, F>(self, f: F) -> ExtractOrReturn<U, Extract>
+    where
+        F: FnOnce(Early) -> U,
+    {
+        match self {
+            ExtractOrReturn::ReturnEarly(early) => ExtractOrReturn::ReturnEarly(f(early)),
+            ExtractOrReturn::Extract(e) => ExtractOrReturn::Extract(e),
+        }
+    }
+
+    pub fn map_extract<U, F>(self, f: F) -> ExtractOrReturn<Early, U>
+    where
+        F: FnOnce(Extract) -> U,
+    {
+        match self {
+            ExtractOrReturn::Extract(extract) => ExtractOrReturn::Extract(f(extract)),
+            ExtractOrReturn::ReturnEarly(e) => ExtractOrReturn::ReturnEarly(e),
+        }
+    }
+}
+
 /// Trait to implement to be able to use the `q!` macro on an instance of the type
 ///
 /// A type implementing this trait defines how an instance of this type
