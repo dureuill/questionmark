@@ -37,6 +37,36 @@ impl<Early, Extract> ExtractOrReturn<Early, Extract> {
     }
 }
 
+/// Trait to be implemented from types that have a state containing an error,
+/// to allow constructing an instance of the type in error state from an instance
+/// of the error.
+///
+/// A prime example of such type is Result<T, E>. From e: E, we can construct Err(e).
+pub trait FromError<E> {
+    fn from_error(error: E) -> Self;
+}
+
+impl<T, E, F> FromError<F> for Result<T, E>
+where
+    F: std::convert::Into<E>,
+{
+    fn from_error(error: F) -> Self {
+        Err(error.into())
+    }
+}
+
+/// Marker struct to allow Error types to declare they are convertible from/into None
+pub struct NoneError;
+
+impl<T, E> FromError<E> for Option<T>
+where
+    E: std::convert::Into<NoneError>,
+{
+    fn from_error(_: E) -> Self {
+        None
+    }
+}
+
 /// Trait to implement to be able to use the `q!` macro on an instance of the type
 ///
 /// A type implementing this trait defines how an instance of this type
