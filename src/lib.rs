@@ -124,29 +124,29 @@ macro_rules! q {
 }
 
 /// Extract T from Result<T, E>, or convert its error to return
-/// a Result<U, F> early.
-impl<T, U, E, F> Question<Result<U, F>> for Result<T, E>
+/// a compatible error type early.
+impl<T, E, F> Question<F> for Result<T, E>
 where
-    F: std::convert::From<E>,
+    F: FromError<E>,
 {
     type Extract = T;
 
-    fn extract_or_return(self) -> ExtractOrReturn<Result<U, F>, T> {
+    fn extract_or_return(self) -> ExtractOrReturn<F, T> {
         match self {
             Ok(ok) => ExtractOrReturn::Extract(ok),
-            Err(err) => ExtractOrReturn::ReturnEarly(Err(err.into())),
+            Err(err) => ExtractOrReturn::ReturnEarly(FromError::from_error(err)),
         }
     }
 }
 
-/// Extract T from Option<T>, or return None early.
-impl<T, U> Question<Option<U>> for Option<T> {
+/// Extract T from Option<T>, or return a compatible error type early.
+impl<T, F: FromError<NoneError>> Question<F> for Option<T> {
     type Extract = T;
 
-    fn extract_or_return(self) -> ExtractOrReturn<Option<U>, T> {
+    fn extract_or_return(self) -> ExtractOrReturn<F, T> {
         match self {
             Some(u) => ExtractOrReturn::Extract(u),
-            None => ExtractOrReturn::ReturnEarly(None),
+            None => ExtractOrReturn::ReturnEarly(FromError::from_error(NoneError)),
         }
     }
 }
