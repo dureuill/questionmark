@@ -230,38 +230,41 @@ mod test {
         }
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    enum Error {
+        Oops(Oops),
+        Woops(Woops),
+        Arg(Arg),
+        None,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Oops;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Woops;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Arg;
+
+    impl std::convert::From<Oops> for Error {
+        fn from(oops: Oops) -> Self {
+            Error::Oops(oops)
+        }
+    }
+    impl std::convert::From<Woops> for Error {
+        fn from(woops: Woops) -> Self {
+            Error::Woops(woops)
+        }
+    }
+    impl std::convert::From<Arg> for Error {
+        fn from(arg: Arg) -> Self {
+            Error::Arg(arg)
+        }
+    }
+
     mod result {
-        #[derive(Debug, PartialEq, Eq)]
-        enum Error {
-            Oops(Oops),
-            Woops(Woops),
-            Arg(Arg),
-        }
-
-        #[derive(Debug, PartialEq, Eq)]
-        struct Oops;
-
-        #[derive(Debug, PartialEq, Eq)]
-        struct Woops;
-
-        #[derive(Debug, PartialEq, Eq)]
-        struct Arg;
-
-        impl std::convert::From<Oops> for Error {
-            fn from(oops: Oops) -> Self {
-                Error::Oops(oops)
-            }
-        }
-        impl std::convert::From<Woops> for Error {
-            fn from(woops: Woops) -> Self {
-                Error::Woops(woops)
-            }
-        }
-        impl std::convert::From<Arg> for Error {
-            fn from(arg: Arg) -> Self {
-                Error::Arg(arg)
-            }
-        }
+        use super::*;
 
         #[test]
         fn test_result() {
@@ -270,9 +273,71 @@ mod test {
                 let _y = q!(Err(Arg));
                 let _z = q!(Err(Woops));
                 let _u = q!(Err(Oops));
+                let _v = q!(Err(Error::Oops(Oops)));
                 Ok(())
             }
             assert_eq!(g(), Err(Error::Arg(Arg)));
+        }
+
+        impl Into<crate::NoneError> for Error {
+            fn into(self) -> crate::NoneError {
+                crate::NoneError
+            }
+        }
+
+        impl From<crate::NoneError> for Error {
+            fn from(_: crate::NoneError) -> Self {
+                Error::None
+            }
+        }
+
+        #[test]
+        fn test_result_option() {
+            fn res_to_option() -> Option<()> {
+                let _x = q!(Err(Error::Arg(Arg)));
+                Some(())
+            }
+
+            fn option_to_res() -> Result<(), Error> {
+                q!(None);
+                Ok(())
+            }
+
+            assert_eq!(res_to_option(), None);
+            assert_eq!(option_to_res(), Err(Error::None));
+        }
+    }
+
+    mod poll {
+        use super::*;
+        use core::task::Poll;
+        #[test]
+        fn test_poll() {
+            // from @steffahn in https://internals.rust-lang.org/t/a-slightly-more-general-easier-to-implement-alternative-to-the-try-trait/12034/3
+            fn foo() -> Result<(), Error> {
+                let _x: Poll<u32> = Poll::Ready(Err(Arg))?;
+                Ok(())
+            }
+
+            fn bar() -> Result<(), Error> {
+                let _x: Poll<Option<u32>> = Poll::Ready(Some(Err(Oops)))?;
+                Ok(())
+            }
+
+            fn qux() -> Poll<Result<(), Error>> {
+                let _x: i32 = Err(Woops)?;
+                Poll::Pending
+            }
+
+            fn baz() -> Poll<Option<Result<(), Error>>> {
+                let _x: i32 = Err(Error::None)?;
+                Poll::Pending
+            }
+
+            assert_eq!(foo(), Err(Error::Arg(Arg)));
+            assert_eq!(bar(), Err(Error::Oops(Oops)));
+            assert_eq!(qux(), Poll::Ready(Err(Error::Woops(Woops))));
+            assert_eq!(baz(), Poll::Ready(Some(Err(Error::None))));
         }
     }
 }
