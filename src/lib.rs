@@ -81,6 +81,10 @@ pub trait TryUnwrap<Return> {
     /// To do so, this function returns either Return(early), or
     /// Unwrap(t).
     fn try_unwrap(self) -> MaybeUnwrap<Self::Output, Return>;
+
+    // A function to "go back" from the produced output to
+    // the wrapping value.
+    fn from_unwrapped(output: Self::Output) -> Self;
 }
 
 /// Macro that stands for the '?' operator.
@@ -137,6 +141,10 @@ where
             Err(err) => MaybeUnwrap::Return(FromError::from_error(err)),
         }
     }
+
+    fn from_unwrapped(output: Self::Output) -> Self {
+        Ok(output)
+    }
 }
 
 /// Unwrap T from Option<T>, or return a compatible error type early.
@@ -148,6 +156,10 @@ impl<T, F: FromError<NoneError>> TryUnwrap<F> for Option<T> {
             Some(u) => MaybeUnwrap::Unwrap(u),
             None => MaybeUnwrap::Return(FromError::from_error(NoneError)),
         }
+    }
+
+    fn from_unwrapped(output: Self::Output) -> Self {
+        Some(output)
     }
 }
 
@@ -170,6 +182,13 @@ where
                 .map_unwrap(|output| Poll::Ready(output)),
         }
     }
+
+    fn from_unwrapped(output: Self::Output) -> Self {
+        match output {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(output) => Poll::Ready(T::from_unwrapped(output)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -179,19 +198,20 @@ mod test {
     mod bail {
         use super::*;
 
-        struct Bail<T> {
-            val: T,
-            cond: bool,
-        }
+        struct Bail<T>(Option<T>);
 
         // Continue execution if condition is true, otherwise return early
         fn bail(cond: bool) -> Bail<()> {
-            Bail { val: (), cond }
+            bail_with(cond, ())
         }
 
         // Continue execution if condition is true, otherwise return val early
         fn bail_with<T>(cond: bool, val: T) -> Bail<T> {
-            Bail { val, cond }
+            Bail(if cond {
+                None // continue execution
+            } else {
+                Some(val) // return 'val' early
+            })
         }
 
         // Continue execution if condition is true, otherwise return early the stored
@@ -199,11 +219,14 @@ mod test {
         impl<T> TryUnwrap<T> for Bail<T> {
             type Output = ();
             fn try_unwrap(self) -> MaybeUnwrap<(), T> {
-                if self.cond {
-                    MaybeUnwrap::Unwrap(())
-                } else {
-                    MaybeUnwrap::Return(self.val)
+                match self {
+                    Bail(Some(value)) => MaybeUnwrap::Return(value),
+                    Bail(None) => MaybeUnwrap::Unwrap(()),
                 }
+            }
+
+            fn from_unwrapped((): ()) -> Self {
+                Bail(None)
             }
         }
 
