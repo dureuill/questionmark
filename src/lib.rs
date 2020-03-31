@@ -1,38 +1,38 @@
-//! Defines an alternative trait to `std::ops::Try`, `Question` that  is not as oriented towards tries and failures.
+//! Defines an alternative trait to `std::ops::Try`, `TryUnwrap` that  is not as oriented towards tries and failures.
 //!
-//! The trait uses a more neutral `ExtractOrReturn` enum to express whether a certain expression `e` should result in some
-//! value being returned early, or in some other value being extracted from `e`.
+//! The trait uses a more neutral `MaybeUnwrap` enum to express whether a certain expression `e` should result in some
+//! value being returned early, or in some other value being unwrapped from `e`.
 //!
-//! Types that implement the `Question` trait can be used with the `q` macro, that is similar to the `std::try` macro.
-//! The semantics of `?` could be adapted to use the `Question` trait instead of the `std::ops::Try` trait.
+//! Types that implement the `TryUnwrap` trait can be used with the `q` macro, that is similar to the `std::try` macro.
+//! The semantics of `?` could be adapted to use the `TryUnwrap` trait instead of the `std::ops::Try` trait.
 
-/// Indicate whether we should return early or extract a value
+/// Indicate whether we should return early or unwrap a value
 #[must_use]
-pub enum ExtractOrReturn<Early, Extract> {
-    /// Return early with value of type Early
-    ReturnEarly(Early),
-    /// Extract value of type Extract
-    Extract(Extract),
+pub enum MaybeUnwrap<T, E> {
+    /// Unwrap value of type T
+    Unwrap(T),
+    /// Return early with value of type E
+    Return(E),
 }
 
-impl<Early, Extract> ExtractOrReturn<Early, Extract> {
-    pub fn map_early<U, F>(self, f: F) -> ExtractOrReturn<U, Extract>
+impl<T, E> MaybeUnwrap<T, E> {
+    pub fn map_unwrap<U, F>(self, f: F) -> MaybeUnwrap<U, E>
     where
-        F: FnOnce(Early) -> U,
+        F: FnOnce(T) -> U,
     {
         match self {
-            ExtractOrReturn::ReturnEarly(early) => ExtractOrReturn::ReturnEarly(f(early)),
-            ExtractOrReturn::Extract(e) => ExtractOrReturn::Extract(e),
+            MaybeUnwrap::Unwrap(t) => MaybeUnwrap::Unwrap(f(t)),
+            MaybeUnwrap::Return(early) => MaybeUnwrap::Return(early),
         }
     }
 
-    pub fn map_extract<U, F>(self, f: F) -> ExtractOrReturn<Early, U>
+    pub fn map_return<U, F>(self, f: F) -> MaybeUnwrap<T, U>
     where
-        F: FnOnce(Extract) -> U,
+        F: FnOnce(E) -> U,
     {
         match self {
-            ExtractOrReturn::Extract(extract) => ExtractOrReturn::Extract(f(extract)),
-            ExtractOrReturn::ReturnEarly(e) => ExtractOrReturn::ReturnEarly(e),
+            MaybeUnwrap::Return(early) => MaybeUnwrap::Return(f(early)),
+            MaybeUnwrap::Unwrap(t) => MaybeUnwrap::Unwrap(t),
         }
     }
 }
@@ -70,24 +70,24 @@ where
 /// Trait to implement to be able to use the `q!` macro on an instance of the type
 ///
 /// A type implementing this trait defines how an instance of this type
-/// can be either extracted to the Extract type, or returned early as an instance
-/// of the Early type.
-pub trait Question<Early> {
-    /// The type that should be extracted
-    type Extract;
+/// can be either unwrapped to the Output type, or returned early as an instance
+/// of the Return type.
+pub trait TryUnwrap<Return> {
+    /// The type that should be unwrapped
+    type Output;
 
-    /// A function to determine if the expression x? should either extract
-    /// a value from x of type Extract, or return early a value of type Early.
-    /// To do so, this function returns either ReturnEarly(early), or
-    /// Extract(extract).
-    fn extract_or_return(self) -> ExtractOrReturn<Early, Self::Extract>;
+    /// A function to determine if the expression x? should either unwrap
+    /// a value from x of type Output, or return early a value of type Return.
+    /// To do so, this function returns either Return(early), or
+    /// Unwrap(t).
+    fn try_unwrap(self) -> MaybeUnwrap<Self::Output, Return>;
 }
 
 /// Macro that stands for the '?' operator.
 ///
 /// # Examples
 ///
-/// Option<T> implements the Question<Option<U>> trait:
+/// Option<T> implements the TryUnwrap<Option<U>> trait:
 ///
 /// ```
 /// #[macro_use]
@@ -116,57 +116,58 @@ pub trait Question<Early> {
 #[macro_export]
 macro_rules! q {
     ($e:expr) => {
-        match $crate::Question::<_>::extract_or_return($e) {
-            $crate::ExtractOrReturn::ReturnEarly(early) => return early,
-            $crate::ExtractOrReturn::Extract(extract) => extract,
+        match $crate::TryUnwrap::<_>::try_unwrap($e) {
+            $crate::MaybeUnwrap::Return(early) => return early,
+            $crate::MaybeUnwrap::Unwrap(t) => t,
         }
     };
 }
 
-/// Extract T from Result<T, E>, or convert its error to return
+/// Unwrap T from Result<T, E>, or convert its error to return
 /// a compatible error type early.
-impl<T, E, F> Question<F> for Result<T, E>
+impl<T, E, F> TryUnwrap<F> for Result<T, E>
 where
     F: FromError<E>,
 {
-    type Extract = T;
+    type Output = T;
 
-    fn extract_or_return(self) -> ExtractOrReturn<F, T> {
+    fn try_unwrap(self) -> MaybeUnwrap<T, F> {
         match self {
-            Ok(ok) => ExtractOrReturn::Extract(ok),
-            Err(err) => ExtractOrReturn::ReturnEarly(FromError::from_error(err)),
+            Ok(ok) => MaybeUnwrap::Unwrap(ok),
+            Err(err) => MaybeUnwrap::Return(FromError::from_error(err)),
         }
     }
 }
 
-/// Extract T from Option<T>, or return a compatible error type early.
-impl<T, F: FromError<NoneError>> Question<F> for Option<T> {
-    type Extract = T;
+/// Unwrap T from Option<T>, or return a compatible error type early.
+impl<T, F: FromError<NoneError>> TryUnwrap<F> for Option<T> {
+    type Output = T;
 
-    fn extract_or_return(self) -> ExtractOrReturn<F, T> {
+    fn try_unwrap(self) -> MaybeUnwrap<T, F> {
         match self {
-            Some(u) => ExtractOrReturn::Extract(u),
-            None => ExtractOrReturn::ReturnEarly(FromError::from_error(NoneError)),
+            Some(u) => MaybeUnwrap::Unwrap(u),
+            None => MaybeUnwrap::Return(FromError::from_error(NoneError)),
         }
     }
 }
 
 use core::task::Poll;
 
-// Extract Poll::Pending if the future isn't ready, or Poll::Ready(T::Extract)
-// if the underlying future is ready and was extracted, or return early if the
+// Unwrap Poll::Pending if the future isn't ready, or Poll::Ready(T::Output)
+// if the underlying future is ready and was unwrapped, or return early if the
 // polled type wants to return early.
-impl<T, F> Question<F> for Poll<T>
+impl<T, F> TryUnwrap<F> for Poll<T>
 where
-    T: Question<F>,
+    T: TryUnwrap<F>,
 {
-    type Extract = Poll<T::Extract>;
-    fn extract_or_return(self) -> ExtractOrReturn<F, Self::Extract> {
+    type Output = Poll<T::Output>;
+
+    fn try_unwrap(self) -> MaybeUnwrap<Self::Output, F> {
         match self {
-            Poll::Pending => ExtractOrReturn::Extract(Poll::Pending),
+            Poll::Pending => MaybeUnwrap::Unwrap(Poll::Pending),
             Poll::Ready(t) => t
-                .extract_or_return()
-                .map_extract(|extract| Poll::Ready(extract)),
+                .try_unwrap()
+                .map_unwrap(|output| Poll::Ready(output)),
         }
     }
 }
@@ -195,13 +196,13 @@ mod test {
 
         // Continue execution if condition is true, otherwise return early the stored
         // value
-        impl<T> Question<T> for Bail<T> {
-            type Extract = ();
-            fn extract_or_return(self) -> ExtractOrReturn<T, ()> {
+        impl<T> TryUnwrap<T> for Bail<T> {
+            type Output = ();
+            fn try_unwrap(self) -> MaybeUnwrap<(), T> {
                 if self.cond {
-                    ExtractOrReturn::Extract(())
+                    MaybeUnwrap::Unwrap(())
                 } else {
-                    ExtractOrReturn::ReturnEarly(self.val)
+                    MaybeUnwrap::Return(self.val)
                 }
             }
         }
